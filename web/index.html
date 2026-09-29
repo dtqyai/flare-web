@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#141310"><title>Flare · 浏览器版</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><a class="brand" href="./">FLARE <span>EMPYREAN CAMPAIGN</span></a><span class="edition">1.15 / 浏览器版</span></header>
+<section id="stage" aria-label="游戏画面">
+<canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Flare 游戏，使用键盘与鼠标操作"></canvas>
+<div id="cover"><div class="intro"><img class="logo" src="logo.png" alt="Flare Empyrean Campaign"><p class="eyebrow">流放之路，始于此刻</p><h1>重返流放之地</h1><p class="description">探索遗迹，迎战暗影。<br>原作世界，现在可在浏览器中启程。</p><button id="start" class="primary" disabled>准备中… <span>↗</span></button><p id="load-label" role="status">正在读取资源清单…</p><progress id="progress" value="0" max="100" hidden></progress><p id="error" role="alert" hidden></p></div></div>
+</section>
+<div class="toolbar"><span id="save-status" role="status">存档保存在此浏览器</span><div class="actions"><button id="import">导入存档</button><input id="import-file" type="file" accept=".json,application/json" hidden><button id="export" disabled>导出存档</button><button id="fullscreen" disabled>全屏 ↗</button></div></div>
+<div class="guide"><p><b>键盘与鼠标</b> 方向键移动 · 鼠标攻击 / 交互 · Esc 打开菜单</p><p>离开前在游戏菜单中保存，再导出备份。清除浏览器数据会删除本地存档。</p><p class="mobile-note">建议在电脑上使用键盘与鼠标游玩。</p></div>
+<footer><p>非官方网页移植 · 官方 1.15 引擎与游戏资源</p><nav><a href="https://github.com/dtqyai/flare-web">项目源码</a><a href="source.tar.gz">对应构建源码</a><a href="LICENSE.txt">资源许可</a><a href="CREDITS.txt">制作名单</a></nav></footer>
+</main><script type="module" src="app.js"></script></body></html>
