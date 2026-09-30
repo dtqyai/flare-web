@@ -1,0 +1,25 @@
+name: Check official Flare releases
+on:
+  schedule:
+    # 09:23 Asia/Singapore, daily. GitHub may delay scheduled runs.
+    - cron: '23 1 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+concurrency:
+  group: upstream-updates
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Check release and propose a pinned upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check_upstream.py --create-pr

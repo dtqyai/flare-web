@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fetch only the official commits declared in upstream.json."""
-import json
 from pathlib import Path
 import subprocess
+from upstream import load_pins
 ROOT=Path(__file__).resolve().parent.parent
-pin=json.loads((ROOT/'upstream.json').read_text())
+pin=load_pins()
 for kind in ('engine','game'):
     target=ROOT/'work'/kind
     if not target.exists():

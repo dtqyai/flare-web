@@ -29,7 +29,7 @@ $('start').onclick=async()=>{
       $('load-label').textContent=`${(loaded/1048576).toFixed(1)} / ${(total/1048576).toFixed(1)} MB · ${Math.floor(loaded/total*100)}%`;
     },controller.signal);
     $('start').textContent='正在启动游戏…'; $('load-label').textContent='资源已校验，正在连接本地存档…';
-    bridge=new SaveBridge(text=>$('save-status').textContent=text,pending);
+    bridge=new SaveBridge(text=>$('save-status').textContent=text,pending,manifest.version);
     window.Module={canvas:$('canvas'),webStorage:bridge,
       locateFile:path=>path.endsWith('.wasm')?manifest.wasm:path,
       getPreloadedPackage:()=>{const data=buffer;buffer=null;return data;},
@@ -53,12 +53,12 @@ $('import-file').onchange=async event=>{
   finally {if(sequence===importSequence){event.target.value='';$('start').disabled=started||!manifest;}}
 };
 $('export').onclick=()=>{
-  try {const backup=bridge.backup();const url=URL.createObjectURL(new Blob([JSON.stringify(backup)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`flare-1.15-${new Date().toISOString().slice(0,10)}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);$('save-status').textContent='已导出当前已写入的存档；游戏进度请先按 Esc 保存';}
+  try {const backup=bridge.backup();const url=URL.createObjectURL(new Blob([JSON.stringify(backup)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`flare-${manifest.version}-${new Date().toISOString().slice(0,10)}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);$('save-status').textContent='已导出当前已写入的存档；游戏进度请先按 Esc 保存';}
   catch(e){$('save-status').textContent=e.message;}
 };
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('stage').requestFullscreen();$('canvas').focus({preventScroll:true});}catch(e){$('save-status').textContent='此浏览器无法进入全屏';}};
 $('canvas').oncontextmenu=e=>e.preventDefault();
 $('canvas').addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&bridge?.ready)bridge.flush().catch(()=>{});});
-try {const response=await fetch('manifest.json');if(!response.ok)throw Error('无法读取资源清单');manifest=await response.json();if(!/^engine-[a-f0-9]{16}\.js$/.test(manifest.engineScript)||!/^engine-[a-f0-9]{16}\.wasm$/.test(manifest.wasm))throw Error('引擎清单无效');$('start').disabled=false;$('start').innerHTML='开始游戏 <span>↗</span>';$('load-label').textContent=`首次启动需下载约 ${Math.ceil(manifest.totalBytes/1048576)} MB 资源，请保持页面打开。`;}
+try {const response=await fetch('manifest.json');if(!response.ok)throw Error('无法读取资源清单');manifest=await response.json();if(typeof manifest.version!=='string'||!/^\d+\.\d+(?:\.\d+)?$/.test(manifest.version))throw Error('游戏版本清单无效');if(!/^engine-[a-f0-9]{16}\.js$/.test(manifest.engineScript)||!/^engine-[a-f0-9]{16}\.wasm$/.test(manifest.wasm))throw Error('引擎清单无效');$('start').disabled=false;$('start').innerHTML='开始游戏 <span>↗</span>';$('load-label').textContent=`首次启动需下载约 ${Math.ceil(manifest.totalBytes/1048576)} MB 资源，请保持页面打开。`;}
 catch(e){fail(e);}

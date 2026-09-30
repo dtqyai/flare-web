@@ -12,7 +12,7 @@ export function validateBackup(value) {
   return value;
 }
 export class SaveBridge {
-  constructor(status, pending) { this.status=status; this.pending=pending; this.dirty=false; this.running=false; this.waiters=[]; }
+  constructor(status, pending, gameVersion) { this.gameVersion=gameVersion; this.status=status; this.pending=pending; this.dirty=false; this.running=false; this.waiters=[]; }
   sync(read) { return new Promise((resolve,reject)=>this.fs.syncfs(read,e=>e?reject(e):resolve())); }
   files(dir=ROOT) {
     if(!this.fs.analyzePath(dir).exists) return [];
@@ -50,6 +50,6 @@ export class SaveBridge {
       const bytes=this.fs.readFile(path); let binary=''; for(let i=0;i<bytes.length;i+=8192) binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
       return {path:path.slice(ROOT.length+1),data:btoa(binary)};
     });
-    return validateBackup({format:'flare-web-save',version:1,gameVersion:'1.15',exportedAt:new Date().toISOString(),files});
+    return validateBackup({format:'flare-web-save',version:1,gameVersion:this.gameVersion,exportedAt:new Date().toISOString(),files});
   }
 }

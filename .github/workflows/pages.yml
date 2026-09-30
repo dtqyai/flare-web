@@ -1,12 +1,14 @@
-name: Build Flare 1.15 for the web
+name: Build Flare for the web
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   build:
@@ -17,21 +19,29 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+      - run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Read pinned Emscripten version
+        id: pins
+        run: python3 -c 'import sys; sys.path.insert(0, "scripts"); from upstream import load_pins; print("emscripten=" + load_pins()["emscripten"])' >> "$GITHUB_OUTPUT"
       - name: Fetch pinned official sources
         run: python3 scripts/fetch.py
       - name: Install Emscripten
+        env:
+          EMSCRIPTEN_VERSION: ${{ steps.pins.outputs.emscripten }}
         run: |
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git work/emsdk
-          work/emsdk/emsdk install 3.1.74
-          work/emsdk/emsdk activate 3.1.74
+          work/emsdk/emsdk install "$EMSCRIPTEN_VERSION"
+          work/emsdk/emsdk activate "$EMSCRIPTEN_VERSION"
       - name: Compile game and assemble site
         run: |
           source work/emsdk/emsdk_env.sh
           python3 scripts/build.py
       - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: dist
   deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
     permissions:

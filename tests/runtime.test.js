@@ -39,3 +39,10 @@ test('large valid backup avoids regex stack overflow; conflicting paths rejected
   const large=valid();large.files[0].data='A'.repeat(8_000_000);assert.equal(validateBackup(large),large);
   const conflict=valid();conflict.files.push({path:'config/a',data:''},{path:'config/a/b',data:''});assert.throws(()=>validateBackup(conflict),/冲突/);
 });
+
+test('save exports record the running game version and retain the backup format',()=>{
+ const bridge=new SaveBridge(()=>{},undefined,'1.16.2');
+ bridge.files=()=>['/flare_data/userdata/saves/1/avatar.txt'];bridge.fs={readFile:()=>new Uint8Array([97,98,99])};
+ const backup=bridge.backup();assert.equal(backup.gameVersion,'1.16.2');assert.equal(backup.version,1);
+ assert.equal(backup.files[0].data,'YWJj');
+});

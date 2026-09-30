@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the pinned official Flare 1.15 sources and assemble a static website."""
+"""Compile the pinned official Flare sources and assemble a static website."""
 import hashlib
 import json
 import os
@@ -7,21 +7,35 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from upstream import load_pins
+
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / 'work'
 DIST = ROOT / 'dist'
-PIN = json.loads((ROOT / 'upstream.json').read_text())
+PIN = load_pins()
 
 
 def run(*args, **kw):
     subprocess.run([str(x) for x in args], check=True, **kw)
 
 
+def patch_once(text, before, after, label):
+    if text.count(before) != 1:
+        raise SystemExit(f"Browser patch no longer matches upstream: {label}")
+    return text.replace(before, after, 1)
+
+
+def render_page(text, version):
+    if text.count('{{FLARE_VERSION}}') != 2:
+        raise SystemExit('Expected exactly two version placeholders in index.html')
+    return text.replace('{{FLARE_VERSION}}', version)
+
+
 def main():
     for name in ('engine', 'game'):
         sha = subprocess.check_output(['git', '-C', str(WORK/name), 'rev-parse', 'HEAD'], text=True).strip()
         if sha != PIN[name]:
-            raise SystemExit(f'{name}: expected official v1.15 commit {PIN[name]}, got {sha}')
+            raise SystemExit(f"{name}: expected official v{PIN['version']} commit {PIN[name]}, got {sha}")
     stage = WORK / 'web-engine'
     # These are generated directories owned exclusively by this builder.
     for generated in (stage, DIST, WORK/'source-bundle'):
@@ -46,20 +60,20 @@ void Platform::FSCommit() {
 }
 
 ''' + text[end:]
-    text = text.replace('settings->screen_w = 1920;', 'settings->screen_w = 1280;').replace('settings->screen_h = 1080;', 'settings->screen_h = 720;')
-    text = text.replace('Module.canvas.requestFullscreen();', 'Module.canvas.requestFullscreen();').replace('parentDocument.exitFullscreen();', 'document.exitFullscreen();')
+    text = patch_once(text, 'settings->screen_w = 1920;', 'settings->screen_w = 1280;', 'default width')
+    text = patch_once(text, 'settings->screen_h = 1080;', 'settings->screen_h = 720;', 'default height')
+    text = patch_once(text, 'parentDocument.exitFullscreen();', 'document.exitFullscreen();', 'exit fullscreen')
     platform.write_text(text)
     main_cpp = stage/'src/main.cpp'
-    text = main_cpp.read_text().replace('init_finished = true;', 'init_finished = true;\n            EM_ASM({ Module.onGameReady(); });')
+    text = patch_once(main_cpp.read_text(), 'init_finished = true;', 'init_finished = true;\n            EM_ASM({ Module.onGameReady(); });', 'game ready callback')
     main_cpp.write_text(text)
     for mod in ('fantasycore', 'empyrean_campaign'):
         shutil.copytree(WORK/'game/mods'/mod, stage/'mods'/mod, dirs_exist_ok=True)
     # Web builds have no pthreads; a saved native preference must not re-enable them.
     settings = stage/'src/Settings.cpp'
-    text = settings.read_text().replace('void Settings::loadSettings() {', 'void Settings::loadSettings() {')
+    text = settings.read_text()
     marker = '\n\t// Force using the software renderer if safe mode is enabled'
-    assert marker in text
-    text = text.replace(marker, '\n#ifdef __EMSCRIPTEN__\n    enable_threaded_image_load = false;\n#endif\n' + marker)
+    text = patch_once(text, marker, '\n#ifdef __EMSCRIPTEN__\n    enable_threaded_image_load = false;\n#endif\n' + marker, 'disable threaded image loading')
     settings.write_text(text)
     DIST.mkdir(exist_ok=True)
     cmd = [os.environ.get('EMXX', 'em++'), '-O2', '-std=c++11', '-fno-exceptions',
@@ -93,6 +107,7 @@ void Platform::FSCommit() {
     manifest = dict(**runtime, version=PIN['version'], totalBytes=offset, chunks=chunks, engine=PIN['engine'], game=PIN['game'])
     (DIST/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     shutil.copytree(ROOT/'web', DIST, dirs_exist_ok=True)
+    (DIST/'index.html').write_text(render_page((DIST/'index.html').read_text(), PIN['version']))
     shutil.copy2(stage/'mods/fantasycore/images/menus/backgrounds/dungeon.jpg', DIST/'cover.jpg')
     shutil.copy2(stage/'mods/empyrean_campaign/images/menus/logo.png', DIST/'logo.png')
     for repo, names in [('engine', ['COPYING', 'CREDITS.engine.txt']), ('game', ['LICENSE.txt', 'CREDITS.txt'])]:
