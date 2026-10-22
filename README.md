@@ -29,13 +29,15 @@ The archive contains the patched engine and builder sources. To rebuild from it,
 
 ## Cloudflare Workers
 
+Production: [flare-web.bruc3.workers.dev](https://flare-web.bruc3.workers.dev).
+
 Cloudflare Workers Builds is connected directly to the GitHub repository. The production branch is `main`, the root directory is `/`, the build command is `npm run build`, and the deploy command is `npm run deploy`. Automatic dependency installation uses `package-lock.json`. Preview branches are disabled. The build runs regression tests, fetches the pinned official sources, activates the pinned Emscripten SDK, compiles WebAssembly and validates asset limits before deploying.
 
 `wrangler.jsonc` publishes only `dist/` as Workers Static Assets. Game resources are split into 24 MiB chunks to fit the 25 MiB per-file limit; private configuration, tests and source directories are outside the public asset root. `source.tar.gz` remains public as the corresponding source archive. Generated game data is not committed to Git.
 
 The GitHub Actions workflow remains a validation/build workflow (its `pages.yml` filename is retained for upstream automation). It does not deploy GitHub Pages. Upgrade PRs must pass checks and be reviewed before merging; only `main` triggers the connected production deployment.
 
-Local build/deploy after Cloudflare CLI or Wrangler authentication:
+Local build/deploy after Wrangler authentication (`npx wrangler login`) or with a scoped `CLOUDFLARE_API_TOKEN`:
 
 ```sh
 npm ci
