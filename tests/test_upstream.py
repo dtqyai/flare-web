@@ -185,6 +185,7 @@ class Builder(unittest.TestCase):
                 "tests/test_upstream.py": "tests",
                 "upstream.json": json.dumps(dict(PINS, version="1.16.2")),
                 "README.md": "readme", "COPYING": "license", "package.json": "{}",
+                "package-lock.json": "{}", "wrangler.jsonc": "{}",
             }
             for name, content in files.items():
                 path = root / name

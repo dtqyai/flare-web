@@ -116,7 +116,7 @@ def propose(pins):
 - Game commit: `{pins['game']}`
 - Emscripten remains pinned to `{pins['emscripten']}`.
 
-The updater dispatches **Build Flare for the web** on this branch to run JavaScript/Python tests and compile the complete WebAssembly game. Check that run before merging. Only main deploys to Pages.
+The updater dispatches **Build Flare for the web** on this branch to run JavaScript/Python tests and compile the complete WebAssembly game. Check that run before merging. Cloudflare Workers Builds deploys only main.
 
 Before merging, review upstream changes and verify browser startup, gameplay, saving and loading an exported previous-version save. Compilation alone does not establish save compatibility. Back up existing saves before testing. This PR is never merged automatically.
 """

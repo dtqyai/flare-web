@@ -121,7 +121,7 @@ void Platform::FSCommit() {
     shutil.copy2(WORK/'engine/COPYING', source/'engine/COPYING')
     shutil.copytree(ROOT/'scripts', source/'builder/scripts', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copytree(ROOT/'web', source/'builder/web', dirs_exist_ok=True)
-    for name in ('upstream.json', 'README.md', 'COPYING', 'package.json'):
+    for name in ('upstream.json', 'README.md', 'COPYING', 'package.json', 'package-lock.json', 'wrangler.jsonc'):
         shutil.copy2(ROOT/name, source/'builder'/name)
     shutil.copytree(ROOT/'tests', source/'builder/tests', dirs_exist_ok=True)
     shutil.make_archive(str(DIST/'source'), 'gztar', source)

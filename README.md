@@ -21,21 +21,35 @@ python3 scripts/build.py
 python3 -m http.server 8087 --directory dist
 ```
 
-Open `http://localhost:8087`. Production requires HTTPS. No npm dependencies are required.
+Open `http://localhost:8087`. Production requires HTTPS. The browser runtime has no npm dependencies; `npm ci` installs Wrangler for deployment and deployment tests.
 
 `upstream.json` pins exact official release commits. The builder verifies them, creates fresh generated directories, applies narrowly scoped browser patches, compiles the engine, hashes the JS/WASM filenames, splits resources and emits corresponding patched source in `dist/source.tar.gz`. It deletes and recreates only its generated `work/web-engine`, `work/source-bundle` and `dist` directories. Do not put personal files there.
 
 The archive contains the patched engine and builder sources. To rebuild from it, use `builder/` as the project root, run `scripts/fetch.py` to fetch the pinned public asset/source commits, activate Emscripten, then run `scripts/build.py`.
 
-## GitHub Pages
+## Cloudflare Workers
 
-The workflow tests and builds on pull requests, pushes to `main` and manual dispatch. Only runs on `main` deploy the `dist` artifact; upgrade branches only validate. Set the repository's Pages source to **GitHub Actions**. Generated game data is not committed to Git. The site is roughly 630 MiB; account for your hosting provider's size and bandwidth limits.
+Cloudflare Workers Builds is connected directly to the GitHub repository. The production branch is `main`, the root directory is `/`, the build command is `npm run build`, and the deploy command is `npm run deploy`. Automatic dependency installation uses `package-lock.json`. Preview branches are disabled. The build runs regression tests, fetches the pinned official sources, activates the pinned Emscripten SDK, compiles WebAssembly and validates asset limits before deploying.
+
+`wrangler.jsonc` publishes only `dist/` as Workers Static Assets. Game resources are split into 24 MiB chunks to fit the 25 MiB per-file limit; private configuration, tests and source directories are outside the public asset root. `source.tar.gz` remains public as the corresponding source archive. Generated game data is not committed to Git.
+
+The GitHub Actions workflow remains a validation/build workflow (its `pages.yml` filename is retained for upstream automation). It does not deploy GitHub Pages. Upgrade PRs must pass checks and be reviewed before merging; only `main` triggers the connected production deployment.
+
+Local build/deploy after Cloudflare CLI or Wrangler authentication:
+
+```sh
+npm ci
+npm run build
+npm run deploy
+```
+
+A new hostname has separate browser storage. Export saves from the previous site and import the backup on the new site before starting the game. The previous GitHub Pages site is not automatically removed or redirected, so existing saves remain accessible there.
 
 ## Upstream updates
 
 `Check official Flare releases` runs daily at approximately **09:23 Asia/Singapore** and supports manual dispatch. It checks the latest official `flare-game` stable release, waits for matching engine and game tags, resolves lightweight or annotated tags to exact commit SHAs, and opens one `codex/upstream-v<version>` PR. Drafts, prereleases, older versions and master commits are excluded. A closed upgrade PR is treated as declined and is not recreated; open PRs are reused.
 
-The updater explicitly dispatches `Build Flare for the web` on the upgrade branch, so validation does not depend on automatic workflow triggering by a bot-created PR. It runs JavaScript/Python tests and compiles the full game; PR branches cannot deploy to Pages. Review upstream changes, browser patches, gameplay and previous-version save compatibility before merging. No automatic merge is configured. If the build fails, fix the upgrade branch and rerun validation before merging.
+The updater explicitly dispatches `Build Flare for the web` on the upgrade branch, so validation does not depend on automatic workflow triggering by a bot-created PR. It runs JavaScript/Python tests and compiles the full game; PR branches cannot deploy to the production Worker. Review upstream changes, browser patches, gameplay and previous-version save compatibility before merging. No automatic merge is configured. If the build fails, fix the upgrade branch and rerun validation before merging.
 
 The version in `upstream.json` feeds the resource manifest, rendered page labels, exported save metadata and backup filename. Emscripten is also read from that file by CI. Browser patches fail the build if expected source anchors change. The persistent storage location and backup format version are kept independent of the game version; previous backups remain readable, but actual cross-version game-save compatibility must be tested.
 
