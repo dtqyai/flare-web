@@ -13,7 +13,9 @@ Save from the in-game Esc menu before leaving, then export a backup. Saves live 
 Prerequisites: Git, Python 3.10+, Node 22+ (tests), and [Emscripten SDK](https://github.com/emscripten-core/emsdk).
 
 ```sh
+npm ci
 npm test
+npm run test:deploy
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/fetch.py
 # Activate the Emscripten version declared in upstream.json first.
