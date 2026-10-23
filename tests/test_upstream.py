@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -156,6 +158,37 @@ class Releases(unittest.TestCase):
 
 
 class Builder(unittest.TestCase):
+    def test_compiler_version_must_match_before_outputs_are_changed(self):
+        with patch.object(build.subprocess, 'check_output', return_value='emcc (Emscripten compiler) 3.1.74\n'):
+            build.verify_compiler('custom-em++', '3.1.74')
+        for output in ('emcc (Emscripten compiler) 3.1.75\n', 'clang version 3.1.74\n'):
+            with patch.object(build.subprocess, 'check_output', return_value=output), \
+                 patch.object(build.shutil, 'rmtree') as remove:
+                with self.assertRaisesRegex(SystemExit, 'Expected Emscripten'):
+                    build.main()
+                remove.assert_not_called()
+
+    def test_git_export_uses_committed_bytes_and_excludes_local_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo, output = Path(directory) / 'repo', Path(directory) / 'out'
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+            git('init', '-q')
+            (repo / 'source.cpp').write_text('committed source')
+            (repo / '.gitignore').write_text('ignored.cpp\n')
+            git('add', '.')
+            git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'fixture')
+            commit = git('rev-parse', 'HEAD')
+            (repo / 'source.cpp').write_text('local edit')
+            (repo / 'untracked.cpp').write_text('untracked')
+            (repo / 'ignored.cpp').write_text('ignored')
+            build.export_commit(repo, commit, output)
+            self.assertEqual((output / 'source.cpp').read_text(), 'committed source')
+            self.assertFalse((output / 'untracked.cpp').exists())
+            self.assertFalse((output / 'ignored.cpp').exists())
+            self.assertEqual((repo / 'source.cpp').read_text(), 'local edit')
+
     def test_patch_anchor_changes_fail_visibly(self):
         self.assertEqual(build.patch_once("abc", "b", "d", "test"), "adc")
         for text in ("ac", "abbc"):
@@ -197,10 +230,13 @@ class Builder(unittest.TestCase):
                     (dist / ("flare." + extension)).write_bytes(b"test")
 
             def revision(args, **kwargs):
+                if args[-1] == '--version':
+                    return 'emcc (Emscripten compiler) 3.1.74\n'
                 return PINS[Path(args[2]).name] + "\n"
 
             with patch.multiple(build, ROOT=root, WORK=work, DIST=dist, PIN=dict(PINS, version="1.16.2")), \
                  patch.object(build.subprocess, "check_output", side_effect=revision), \
+                 patch.object(build, "export_commit", side_effect=lambda repo, commit, dest: shutil.copytree(repo, dest)), \
                  patch.object(build, "run", side_effect=compile_stub):
                 build.main()
             manifest = json.loads((dist / "manifest.json").read_text())

@@ -4,13 +4,15 @@ A playable browser port of **Flare: Empyrean Campaign**, using the official engi
 
 ## Playing
 
-Use a recent desktop browser with WebAssembly, IndexedDB and Web Locks. Keyboard and mouse are required; the landing page adapts to phones, but touch controls are not implemented. Initial game resources are about **619 MiB**, downloaded in 26 chunks with SHA-256 validation. Allow enough memory for the full resource bundle and game. Browser HTTP caching may reduce subsequent downloads; offline play is not guaranteed.
+Use a recent desktop browser with WebAssembly, IndexedDB and Web Locks. Keyboard and mouse are required; the landing page adapts to phones, but touch controls are not implemented. Initial game resources are about **619 MiB**, downloaded in 26 chunks with SHA-256 validation. Allow enough memory for the full resource bundle and game. Browser HTTP caching may reduce subsequent downloads; offline play is not guaranteed. A download attempt times out after 30 seconds without data and is retried up to twice with increasing delays. **Cancel download** stops all requests and releases the tab lock, so you can retry without reloading; saved data and a selected import are retained.
 
-Save from the in-game Esc menu before leaving, then export a backup. Saves live only in this browser and site origin, not in a cloud account. Clearing site data removes them. Export contains files already written by the engine, not unsaved in-memory progress. Import a web JSON backup **before starting** and only into a browser profile with no existing character saves; overwriting existing saves is deliberately blocked. Only one tab can run the game per origin.
+Save from the in-game Esc menu before leaving, then export a backup. Saves live only in this browser and site origin, not in a cloud account. Clearing site data removes them. Export contains files already written by the engine, not unsaved in-memory progress. Import a web JSON backup **before starting** and only into a browser profile with no existing character saves; overwriting existing saves is deliberately blocked. Only one tab can use the saves per origin. Starting is blocked until a selected backup finishes reading and validation.
+
+**Export saves** also works before starting, and if the resource manifest or engine cannot load. It reads the existing local IndexedDB data without downloading game resources or changing the database. Close any other game tab first. During play, export includes engine-written files even if persistence has failed; before startup, it contains only previously persisted files. Standalone exports omit `gameVersion`, because the version that last wrote those files is not recorded in IDBFS. No database is created when an empty profile tries to export.
 
 ## Rebuild
 
-Prerequisites: Git, Python 3.10+, Node 22+ (tests), and [Emscripten SDK](https://github.com/emscripten-core/emsdk).
+Prerequisites: Git, Python 3.12+, Node 22+ (tests), and [Emscripten SDK](https://github.com/emscripten-core/emsdk).
 
 ```sh
 npm ci
@@ -20,12 +22,15 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/fetch.py
 # Activate the Emscripten version declared in upstream.json first.
 python3 scripts/build.py
+python3 scripts/check_assets.py
+npx playwright install chromium
+npm run test:browser
 python3 -m http.server 8087 --directory dist
 ```
 
-Open `http://localhost:8087`. Production requires HTTPS. The browser runtime has no npm dependencies; `npm ci` installs Wrangler for deployment and deployment tests.
+Open `http://localhost:8087`. Production requires HTTPS. The browser runtime has no npm dependencies; `npm ci` installs Wrangler for deployment checks and Playwright for browser regressions.
 
-`upstream.json` pins exact official release commits. The builder verifies them, creates fresh generated directories, applies narrowly scoped browser patches, compiles the engine, hashes the JS/WASM filenames, splits resources and emits corresponding patched source in `dist/source.tar.gz`. It deletes and recreates only its generated `work/web-engine`, `work/source-bundle` and `dist` directories. Do not put personal files there.
+`upstream.json` pins exact official release commits. The builder checks the actual compiler version against the Emscripten pin before touching output, verifies the upstream commits, exports their Git objects into fresh generated directories, applies narrowly scoped browser patches, compiles the engine, hashes the JS/WASM filenames, splits resources and emits corresponding patched source in `dist/source.tar.gz`. It deletes and recreates only its generated `work/web-engine`, `work/web-game`, `work/source-bundle` and `dist` directories. Do not put personal files there. Tracked edits, untracked files and ignored files in the upstream checkouts cannot enter the exported sources; those checkouts are left unchanged. `EMXX` may select a compiler executable, but its version must still match the pin.
 
 The archive contains the patched engine and builder sources. To rebuild from it, use `builder/` as the project root, run `scripts/fetch.py` to fetch the pinned public asset/source commits, activate Emscripten, then run `scripts/build.py`.
 
@@ -53,7 +58,7 @@ A new hostname has separate browser storage. Export saves from the previous site
 
 `Check official Flare releases` runs daily at approximately **09:23 Asia/Singapore** and supports manual dispatch. It checks the latest official `flare-game` stable release, waits for matching engine and game tags, resolves lightweight or annotated tags to exact commit SHAs, and opens one `codex/upstream-v<version>` PR. Drafts, prereleases, older versions and master commits are excluded. A closed upgrade PR is treated as declined and is not recreated; open PRs are reused.
 
-The updater explicitly dispatches `Build Flare for the web` on the upgrade branch, so validation does not depend on automatic workflow triggering by a bot-created PR. It runs JavaScript/Python tests and compiles the full game; PR branches cannot deploy to the production Worker. Review upstream changes, browser patches, gameplay and previous-version save compatibility before merging. No automatic merge is configured. If the build fails, fix the upgrade branch and rerun validation before merging.
+The updater explicitly dispatches `Build Flare for the web` on the upgrade branch, so validation does not depend on automatic workflow triggering by a bot-created PR. It runs JavaScript/Python tests, compiles the full game and runs real-browser startup/storage regressions; PR branches cannot deploy to the production Worker. Review upstream changes, browser patches, gameplay and previous-version save compatibility before merging. No automatic merge is configured. If the build fails, fix the upgrade branch and rerun validation before merging.
 
 The version in `upstream.json` feeds the resource manifest, rendered page labels, exported save metadata and backup filename. Emscripten is also read from that file by CI. Browser patches fail the build if expected source anchors change. The persistent storage location and backup format version are kept independent of the game version; previous backups remain readable, but actual cross-version game-save compatibility must be tested.
 
@@ -66,6 +71,14 @@ python3 scripts/check_upstream.py
 ```
 
 To upgrade manually, review the official release and update `version`, `engine` and `game` in `upstream.json`, then run tests and rebuild. Keep exact commit pins for reproducibility.
+
+## Regression checks
+
+`npm test` covers startup/import ordering, cancellation, stalled headers and response streams, retries, save-write serialization and backup validation. Python tests cover the updater, assembly, compiler-version rejection and exporting committed bytes from a deliberately modified checkout.
+
+After building `dist`, `npm run test:browser` serves that actual build locally and runs Chromium against the compiled WebAssembly engine and real IndexedDB/Web Locks. It checks startup, persisted files across reloads, import/export round trips, resource-independent recovery, empty-profile export, cancellation and two-tab exclusion. It fails if the compiled game is missing. The storage round trip uses a small test file through the actual engine filesystem; it does not replace a gameplay or cross-version character-compatibility check. Use `CHROME_EXECUTABLE_PATH` to select an installed Chrome/Chromium. Failed screenshots are written to `test-results/` and retained by GitHub Actions.
+
+The standalone recovery reader follows the pinned Emscripten IDBFS `FILE_DATA` schema and opens it read-only without requesting a database version. Re-run the real-browser round trip when upgrading Emscripten. The Cloudflare build retains the unit/deployment checks; the full browser suite runs in GitHub Actions before merge.
 
 ## Browser patches
 

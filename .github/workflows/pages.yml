@@ -40,6 +40,16 @@ jobs:
           python3 scripts/build.py
       - name: Check Workers asset limits
         run: python3 scripts/check_assets.py
+      - name: Install browser for game regressions
+        run: npx playwright install --with-deps chromium
+      - name: Verify actual WASM startup and browser saves
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: test-results/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: website

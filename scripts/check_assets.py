@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def check(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
-    required = ["index.html", "app.js", "storage.js", "loader.js", "style.css", "cover.jpg", "logo.png",
+    required = ["index.html", "app.js", "storage.js", "persisted-saves.js", "loader.js", "style.css", "cover.jpg", "logo.png",
                 "source.tar.gz", "LICENSE.txt", "CREDITS.txt", "COPYING", "CREDITS.engine.txt",
                 manifest["engineScript"], manifest["wasm"], *[chunk["url"] for chunk in manifest["chunks"]]]
     for name in required:

@@ -4,8 +4,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import tarfile
+import tempfile
 
 from upstream import load_pins
 
@@ -31,19 +34,43 @@ def render_page(text, version):
     return text.replace('{{FLARE_VERSION}}', version)
 
 
+def verify_compiler(compiler, expected):
+    output = subprocess.check_output([compiler, '--version'], text=True)
+    match = re.search(r'^em(?:cc|\+\+)\s+\(Emscripten[^\n]*\)\s+(\d+\.\d+\.\d+)\b', output, re.M)
+    if not match or match.group(1) != expected:
+        raise SystemExit(f'Expected Emscripten {expected}; activate the pinned SDK before building')
+
+
+def export_commit(repository, commit, destination):
+    """Export the Git object, never tracked edits, untracked or ignored files."""
+    destination.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryFile() as archive:
+        subprocess.run(['git', '-C', str(repository), 'archive', '--format=tar', commit],
+                       stdout=archive, check=True)
+        archive.seek(0)
+        with tarfile.open(fileobj=archive) as source:
+            source.extractall(destination, filter='data')
+
+
 def main():
+    compiler = os.environ.get('EMXX', 'em++')
+    verify_compiler(compiler, PIN['emscripten'])
     for name in ('engine', 'game'):
         sha = subprocess.check_output(['git', '-C', str(WORK/name), 'rev-parse', 'HEAD'], text=True).strip()
         if sha != PIN[name]:
             raise SystemExit(f"{name}: expected official v{PIN['version']} commit {PIN[name]}, got {sha}")
     stage = WORK / 'web-engine'
+    game = WORK / 'web-game'
     # These are generated directories owned exclusively by this builder.
-    for generated in (stage, DIST, WORK/'source-bundle'):
+    generated_paths = (stage, game, DIST, WORK/'source-bundle')
+    for generated in generated_paths:
         if generated.is_symlink():
             raise SystemExit(f'Refusing to clean symlink: {generated}')
+    for generated in generated_paths:
         if generated.exists():
             shutil.rmtree(generated)
-    shutil.copytree(WORK/'engine', stage, dirs_exist_ok=True, ignore=shutil.ignore_patterns('.git'))
+    export_commit(WORK/'engine', PIN['engine'], stage)
+    export_commit(WORK/'game', PIN['game'], game)
     platform = stage/'src/PlatformEmscripten.cpp'
     text = platform.read_text()
     begin, end = text.index('void Platform::FSInit()'), text.index('void Platform::setScreenSize()')
@@ -68,7 +95,7 @@ void Platform::FSCommit() {
     text = patch_once(main_cpp.read_text(), 'init_finished = true;', 'init_finished = true;\n            EM_ASM({ Module.onGameReady(); });', 'game ready callback')
     main_cpp.write_text(text)
     for mod in ('fantasycore', 'empyrean_campaign'):
-        shutil.copytree(WORK/'game/mods'/mod, stage/'mods'/mod, dirs_exist_ok=True)
+        shutil.copytree(game/'mods'/mod, stage/'mods'/mod, dirs_exist_ok=True)
     # Web builds have no pthreads; a saved native preference must not re-enable them.
     settings = stage/'src/Settings.cpp'
     text = settings.read_text()
@@ -76,7 +103,7 @@ void Platform::FSCommit() {
     text = patch_once(text, marker, '\n#ifdef __EMSCRIPTEN__\n    enable_threaded_image_load = false;\n#endif\n' + marker, 'disable threaded image loading')
     settings.write_text(text)
     DIST.mkdir(exist_ok=True)
-    cmd = [os.environ.get('EMXX', 'em++'), '-O2', '-std=c++11', '-fno-exceptions',
+    cmd = [compiler, '-O2', '-std=c++11', '-fno-exceptions',
            '-sUSE_SDL=2', '-sUSE_SDL_IMAGE=2', '-sSDL2_IMAGE_FORMATS=["png","jpg"]',
            '-sUSE_SDL_TTF=2', '-sUSE_SDL_MIXER=2', '-sSDL2_MIXER_FORMATS=["ogg"]',
            '-sALLOW_MEMORY_GROWTH=1', '-sINITIAL_MEMORY=134217728', '-sMAXIMUM_MEMORY=2147483648',
@@ -110,15 +137,15 @@ void Platform::FSCommit() {
     (DIST/'index.html').write_text(render_page((DIST/'index.html').read_text(), PIN['version']))
     shutil.copy2(stage/'mods/fantasycore/images/menus/backgrounds/dungeon.jpg', DIST/'cover.jpg')
     shutil.copy2(stage/'mods/empyrean_campaign/images/menus/logo.png', DIST/'logo.png')
-    for repo, names in [('engine', ['COPYING', 'CREDITS.engine.txt']), ('game', ['LICENSE.txt', 'CREDITS.txt'])]:
+    for repo, names in [(stage, ['COPYING', 'CREDITS.engine.txt']), (game, ['LICENSE.txt', 'CREDITS.txt'])]:
         for name in names:
-            shutil.copy2(WORK/repo/name, DIST/name)
+            shutil.copy2(repo/name, DIST/name)
     # Corresponding patched engine sources, including the exact build recipe.
     source = WORK/'source-bundle'
     shutil.copytree(stage/'src', source/'engine/src', dirs_exist_ok=True)
     shutil.copytree(stage/'cmake', source/'engine/cmake', dirs_exist_ok=True)
     shutil.copy2(stage/'CMakeLists.txt', source/'engine/CMakeLists.txt')
-    shutil.copy2(WORK/'engine/COPYING', source/'engine/COPYING')
+    shutil.copy2(stage/'COPYING', source/'engine/COPYING')
     shutil.copytree(ROOT/'scripts', source/'builder/scripts', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copytree(ROOT/'web', source/'builder/web', dirs_exist_ok=True)
     for name in ('upstream.json', 'README.md', 'COPYING', 'package.json', 'package-lock.json', 'wrangler.jsonc'):

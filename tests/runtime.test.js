@@ -46,3 +46,77 @@ test('save exports record the running game version and retain the backup format'
  const backup=bridge.backup();assert.equal(backup.gameVersion,'1.16.2');assert.equal(backup.version,1);
  assert.equal(backup.files[0].data,'YWJj');
 });
+
+test('stalled response bodies time out, retry three times, and release their streams', async () => {
+  const original = globalThis.fetch; let calls = 0, aborted = 0;
+  globalThis.fetch = async (url, { signal }) => {
+    calls++;
+    return new Response(new ReadableStream({
+      start(controller) {
+        signal.addEventListener('abort', () => { aborted++; controller.error(signal.reason); }, { once: true });
+      }
+    }));
+  };
+  try {
+    await assert.rejects(loadChunks({ totalBytes: 1, chunks: [{ url: 'assets/00-ab.bin', bytes: 1, offset: 0, sha256: '0'.repeat(64) }] },
+      () => {}, undefined, { idleTimeoutMs: 20, retryBaseMs: 1 }), /超时/);
+    assert.equal(calls, 3); assert.equal(aborted, 3);
+  } finally { globalThis.fetch = original; }
+});
+
+test('requests waiting for headers also time out and retry', async () => {
+  const original = globalThis.fetch; let calls = 0;
+  globalThis.fetch = (url, { signal }) => {
+    calls++;
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  };
+  try {
+    await assert.rejects(loadChunks({ totalBytes: 1, chunks: [{ url: 'assets/00-ab.bin', bytes: 1, offset: 0, sha256: '0'.repeat(64) }] },
+      () => {}, undefined, { idleTimeoutMs: 20, retryBaseMs: 1 }), /超时/);
+    assert.equal(calls, 3);
+  } finally { globalThis.fetch = original; }
+});
+
+test('cancellation stops all download workers without retrying', async () => {
+  const original = globalThis.fetch, controller = new AbortController();
+  let calls = 0, aborted = 0, started;
+  const ready = new Promise(resolve => started = resolve);
+  globalThis.fetch = (url, { signal }) => {
+    if (++calls === 3) started();
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted++; reject(signal.reason); }, { once: true }));
+  };
+  try {
+    const pending = loadChunks({ totalBytes: 3, chunks: [0, 1, 2].map(i => ({ url: `assets/0${i}-ab.bin`, bytes: 1, offset: i, sha256: '0'.repeat(64) })) }, () => {}, controller.signal);
+    await ready; controller.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(calls, 3); assert.equal(aborted, 3);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a permanently failed chunk aborts its stalled siblings before returning', async () => {
+  const original = globalThis.fetch; let aborted = 0;
+  globalThis.fetch = (url, { signal }) => url.includes('00-') ? Promise.resolve(new Response('', { status: 503 })) :
+    new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted++; reject(signal.reason); }, { once: true }));
+  try {
+    await assert.rejects(loadChunks({ totalBytes: 3, chunks: [0, 1, 2].map(i => ({ url: `assets/0${i}-ab.bin`, bytes: 1, offset: i, sha256: '0'.repeat(64) })) },
+      () => {}, undefined, { retryBaseMs: 1 }), /503/);
+    assert.equal(aborted, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test('manifest validation rejects bad versions and incomplete chunk maps before enabling start', async () => {
+  const { loadManifest } = await import('../web/loader.js');
+  const original = globalThis.fetch;
+  const good = { version: '1.15', engineScript: 'engine-0000000000000000.js', wasm: 'engine-1111111111111111.wasm', totalBytes: 1,
+    chunks: [{ url: 'assets/00-ab.bin', bytes: 1, offset: 0, sha256: '0'.repeat(64) }] };
+  try {
+    for (const version of [undefined, null, '1.16-beta', '1.16/evil']) {
+      globalThis.fetch = async () => Response.json({ ...good, version });
+      await assert.rejects(loadManifest(), /版本清单无效/);
+    }
+    globalThis.fetch = async () => Response.json({ ...good, chunks: [] });
+    await assert.rejects(loadManifest(), /资源大小不匹配/);
+    globalThis.fetch = async () => Response.json(good);
+    assert.deepEqual(await loadManifest(), good);
+  } finally { globalThis.fetch = original; }
+});

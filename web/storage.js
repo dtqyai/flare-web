@@ -1,4 +1,15 @@
 const ROOT='/flare_data';
+export function encodeFile(path, bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return { path, data: btoa(binary) };
+}
+
+export function makeBackup(files, gameVersion) {
+  return validateBackup({ format: 'flare-web-save', version: 1, ...(gameVersion ? { gameVersion } : {}),
+    exportedAt: new Date().toISOString(), files });
+}
+
 export function validateBackup(value) {
   if(!value || value.format!=='flare-web-save' || value.version!==1 || !Array.isArray(value.files) || value.files.length>4096) throw Error('备份格式不正确');
   const seen=new Set(); let size=0;
@@ -46,10 +57,8 @@ export class SaveBridge {
   }
   flush() { return new Promise((resolve,reject)=>{this.waiters.push({resolve,reject}); this.commit();}); }
   backup() {
-    const files=this.files().filter(p=>/^(config\/|userdata\/saves\/)/.test(p.slice(ROOT.length+1))).map(path=>{
-      const bytes=this.fs.readFile(path); let binary=''; for(let i=0;i<bytes.length;i+=8192) binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-      return {path:path.slice(ROOT.length+1),data:btoa(binary)};
-    });
-    return validateBackup({format:'flare-web-save',version:1,gameVersion:this.gameVersion,exportedAt:new Date().toISOString(),files});
+    const files=this.files().filter(p=>/^(config\/|userdata\/saves\/)/.test(p.slice(ROOT.length+1)))
+      .map(path=>encodeFile(path.slice(ROOT.length+1),this.fs.readFile(path)));
+    return makeBackup(files,this.gameVersion);
   }
 }
